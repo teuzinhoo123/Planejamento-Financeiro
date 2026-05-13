@@ -1066,7 +1066,7 @@ const db = firebase.firestore();
 // 🔥 CORREÇÃO PRINCIPAL: 
 // Isso desativa o "WebChannel" que estava dando status 400 na sua rede/navegador
 // e força a comunicação via Long Polling, que é 100% à prova de bloqueios de rede.
-db.settings({ experimentalForceLongPolling: true });
+db.settings({ experimentalForceLongPolling: true, merge: true });
 
 // Aponta para um documento único que vai guardar todos os seus dados na nuvem
 const cloudDataRef = db.collection('banco_financa').doc('meu_estado_global');
