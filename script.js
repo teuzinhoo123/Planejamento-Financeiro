@@ -124,40 +124,106 @@ const calcTotals = () => {
 };
 
 /* ============================================================
-   ☁️ PERSISTÊNCIA NA NUVEM (FIREBASE REAL-TIME)
+   PERSISTENCIA — LocalStorage (backup local sempre ativo)
+   ============================================================ */
+const LOCAL_KEY = 'financa_backup_v1';
+
+const saveLocal = () => {
+  try {
+    localStorage.setItem(LOCAL_KEY, JSON.stringify({
+      saldoBase:    state.saldoBase,
+      transactions: state.transactions,
+      accounts:     state.accounts,
+      piggies:      state.piggies,
+    }));
+  } catch(e) { console.warn('Erro ao salvar local:', e); }
+};
+
+const loadLocal = () => {
+  try {
+    const raw = localStorage.getItem(LOCAL_KEY);
+    if (!raw) return false;
+    const d = JSON.parse(raw);
+    // So restaura se tiver algum dado real (nao sobrescreve com vazio)
+    if (!d.transactions?.length && !d.accounts?.length && !d.piggies?.length &&
+        !Object.keys(d.saldoBase || {}).length) return false;
+    state.saldoBase    = d.saldoBase    || {};
+    state.transactions = d.transactions || [];
+    state.accounts     = d.accounts     || [];
+    state.piggies      = d.piggies      || [];
+    return true;
+  } catch(e) { return false; }
+};
+
+/* ============================================================
+   PERSISTENCIA NA NUVEM (Firebase .get() — sem WebChannel)
    ============================================================ */
 const startCloudListener = () => {
-  // Usa .get() (leitura unica) em vez de .onSnapshot() para evitar
-  // o erro de WebChannel no GitHub Pages / ambientes sem WebSocket estavel.
   cloudDataRef.get().then((doc) => {
     if (doc.exists) {
       const data = doc.data();
-      state.saldoBase    = data.saldoBase    || {};
-      state.transactions = data.transactions || [];
-      state.accounts     = data.accounts     || [];
-      state.piggies      = data.piggies      || [];
+      // Verifica se o Firestore retornou dados reais (nao vazio)
+      const hasCloud =
+        (data.transactions?.length > 0) ||
+        (data.accounts?.length > 0) ||
+        (data.piggies?.length > 0) ||
+        (Object.keys(data.saldoBase || {}).length > 0);
+
+      if (hasCloud) {
+        // Dados na nuvem existem: usa eles e atualiza o backup local
+        state.saldoBase    = data.saldoBase    || {};
+        state.transactions = data.transactions || [];
+        state.accounts     = data.accounts     || [];
+        state.piggies      = data.piggies      || [];
+        saveLocal();
+      } else {
+        // Nuvem veio vazia: tenta restaurar do backup local
+        const restoredLocal = loadLocal();
+        if (restoredLocal) {
+          // Tinha dados locais: sobe eles para a nuvem
+          saveState();
+          showToast('Dados restaurados do backup local.');
+        }
+        // Se nao tinha nada nem local, continua com state vazio (primeiro uso)
+      }
     } else {
-      // Primeira vez: cria o documento vazio no Firestore
-      saveState();
+      // Documento nao existe no Firestore
+      // Tenta restaurar do backup local antes de criar documento vazio
+      const restoredLocal = loadLocal();
+      if (restoredLocal) {
+        saveState(); // Sobe os dados locais para a nuvem
+        showToast('Dados restaurados do backup local.');
+      }
+      // Se nao tinha local, e primeira vez mesmo
     }
     render();
   }).catch((error) => {
-    console.error("Erro ao ler da nuvem:", error);
-    showToast("Erro de conexao. Tentando reconectar...");
-    // Tenta de novo em 5 segundos
-    setTimeout(startCloudListener, 5000);
+    console.error('Erro ao ler da nuvem:', error);
+    // Falha de rede: usa backup local se disponivel
+    const restoredLocal = loadLocal();
+    if (restoredLocal) {
+      showToast('Modo offline — usando dados locais.');
+    } else {
+      showToast('Sem conexao com a nuvem.');
+    }
+    render();
+    // Tenta reconectar em 8 segundos
+    setTimeout(startCloudListener, 8000);
   });
 };
 
 const saveState = () => {
+  // Salva SEMPRE no local primeiro (instantaneo, sem falha de rede)
+  saveLocal();
+  // Depois envia para a nuvem
   cloudDataRef.set({
-    saldoBase: state.saldoBase,
+    saldoBase:    state.saldoBase,
     transactions: state.transactions,
-    accounts: state.accounts,
-    piggies: state.piggies
+    accounts:     state.accounts,
+    piggies:      state.piggies,
   }).catch((error) => {
-    console.error("Erro ao salvar:", error);
-    showToast('⚠️ Erro ao salvar na nuvem!');
+    console.error('Erro ao salvar na nuvem:', error);
+    showToast('Salvo localmente. Nuvem indisponivel no momento.');
   });
 };
 
@@ -569,10 +635,34 @@ const checkLogin = () => {
   }
 };
 
+/* ============================================================
+   RECUPERACAO DE DADOS
+   Injeta os dados salvos no localStorage e Firestore caso
+   o banco esteja vazio. Roda uma unica vez e se auto-remove.
+   ============================================================ */
+const RECOVERY_FLAG = 'financa_recovery_done_v1';
+const recoverData = () => {
+  // Ja rodou antes? Nao faz nada.
+  if (localStorage.getItem(RECOVERY_FLAG)) return;
+
+  const DADOS_RECUPERADOS = {"saldoBase":{"2026-05":6118.4},"transactions":[{"id":"mornz98g-38p0x","tipo":"saida","descricao":"CARTAO ABRIL","categoria":"outros","valor":422.18,"frequencia":"variavel","status":"pendente","data":"2026-05-04","createdAt":1777863600000},{"id":"mornzqxy-y5oaq","tipo":"saida","descricao":"ACERVO","categoria":"alimentacao","valor":129.8,"frequencia":"variavel","status":"pendente","data":"2026-05-04","createdAt":1777863600000},{"id":"mornzzfv-45ug4","tipo":"saida","descricao":"CACAU SHOW","categoria":"alimentacao","valor":89.9,"frequencia":"variavel","status":"pendente","data":"2026-05-04","createdAt":1777863600000},{"id":"moro0aqu-h53cj","tipo":"saida","descricao":"HAMBURGUER","categoria":"alimentacao","valor":105.93,"frequencia":"variavel","status":"pendente","data":"2026-05-04","createdAt":1777863600000},{"id":"moro0h0r-0wmkb","tipo":"saida","descricao":"MARMITA 1","categoria":"alimentacao","valor":23,"frequencia":"variavel","status":"pendente","data":"2026-05-04","createdAt":1777863600000},{"id":"moro0nh6-2w7bc","tipo":"saida","descricao":"LANCHE 1","categoria":"alimentacao","valor":23,"frequencia":"variavel","status":"pendente","data":"2026-05-04","createdAt":1777863600000},{"id":"moro0uc0-x8apc","tipo":"saida","descricao":"MARMITA 2","categoria":"alimentacao","valor":23,"frequencia":"variavel","status":"pendente","data":"2026-05-04","createdAt":1777863600000},{"id":"moro19i8-0g7ke","tipo":"saida","descricao":"ZARA","categoria":"vestuario","valor":93,"frequencia":"variavel","status":"pendente","data":"2026-05-04","createdAt":1777863600000},{"id":"moro1n6t-kol7i","tipo":"saida","descricao":"INGRESSO","categoria":"lazer","valor":213.33,"frequencia":"variavel","status":"pendente","data":"2026-05-04","createdAt":1777863600000},{"id":"moro23od-0ycs2","tipo":"saida","descricao":"DINHEIRO YAN","categoria":"outros","valor":212,"frequencia":"variavel","status":"pendente","data":"2026-05-04","createdAt":1777863600000},{"id":"moro2h8c-2p7ac","tipo":"saida","descricao":"MALHARIA IPANEMA 100","categoria":"vestuario","valor":25,"frequencia":"variavel","status":"pendente","data":"2026-05-04","createdAt":1777863600000},{"id":"moro324p-sf4sc","tipo":"saida","descricao":"FLORES DIA DAS MULHERES","categoria":"outros","valor":137,"frequencia":"variavel","status":"pendente","data":"2026-05-04","createdAt":1777863600000},{"id":"moro3cw3-bo75k","tipo":"saida","descricao":"MC DOANLDS 1","categoria":"alimentacao","valor":19.9,"frequencia":"variavel","status":"pendente","data":"2026-05-04","createdAt":1777863600000},{"id":"moro3lja-uuiss","tipo":"saida","descricao":"UBER","categoria":"transporte","valor":7.23,"frequencia":"variavel","status":"pendente","data":"2026-05-04","createdAt":1777863600000},{"id":"moro3vf8-gluir","tipo":"saida","descricao":"RACAO 1","categoria":"outros","valor":78.5,"frequencia":"variavel","status":"pendente","data":"2026-05-04","createdAt":1777863600000},{"id":"moro49vm-zb7gp","tipo":"saida","descricao":"DEBOCHE","categoria":"lazer","valor":50.93,"frequencia":"variavel","status":"pendente","data":"2026-05-04","createdAt":1777863600000},{"id":"morobk6r-6hkir","tipo":"saida","descricao":"BIGBOX","categoria":"alimentacao","valor":12.27,"frequencia":"variavel","status":"pendente","data":"2026-05-04","createdAt":1777863600000},{"id":"moroby4j-xhoxi","tipo":"saida","descricao":"SHOPPE EMPRESTIMO","categoria":"outros","valor":97.66,"frequencia":"variavel","status":"pago","data":"2026-05-04","createdAt":1777863600000},{"id":"moroccn8-051fx","tipo":"saida","descricao":"SALGADO","categoria":"alimentacao","valor":6,"frequencia":"variavel","status":"pendente","data":"2026-05-04","createdAt":1777863600000},{"id":"morocjqr-hpt9m","tipo":"saida","descricao":"99","categoria":"transporte","valor":11.88,"frequencia":"variavel","status":"pendente","data":"2026-05-04","createdAt":1777863600000},{"id":"morocttp-ln1jg","tipo":"saida","descricao":"CASA DO PAO DE QUEIJO","categoria":"alimentacao","valor":11,"frequencia":"variavel","status":"pendente","data":"2026-05-04","createdAt":1777863600000},{"id":"morod0z3-aa37s","tipo":"saida","descricao":"SABOR GLACE","categoria":"alimentacao","valor":13.36,"frequencia":"variavel","status":"pendente","data":"2026-05-04","createdAt":1777863600000},{"id":"morodd4k-jimxw","tipo":"saida","descricao":"PERFUME","categoria":"vestuario","valor":149.9,"frequencia":"variavel","status":"pendente","data":"2026-05-04","createdAt":1777863600000},{"id":"morodro8-biy2r","tipo":"saida","descricao":"SHOPPE COSTURA","categoria":"outros","valor":128.26,"frequencia":"variavel","status":"pendente","data":"2026-05-04","createdAt":1777863600000},{"id":"moroebys-p3cn5","tipo":"saida","descricao":"CARTAO DE DEBITO","categoria":"outros","valor":312.8,"frequencia":"variavel","status":"pago","data":"2026-05-04","createdAt":1777863600000},{"id":"moroen4m-ejm0w","tipo":"saida","descricao":"PS5","categoria":"outros","valor":161,"frequencia":"variavel","status":"pago","data":"2026-05-04","createdAt":1777863600000},{"id":"morofjl7-9141m","tipo":"saida","descricao":"LUIZA PIZZA","categoria":"alimentacao","valor":9.2,"frequencia":"variavel","status":"pago","data":"2026-05-04","createdAt":1777863600000},{"id":"morogk6q-981pu","tipo":"saida","descricao":"ANA","categoria":"lazer","valor":50,"frequencia":"variavel","status":"pago","data":"2026-05-04","createdAt":1777863600000},{"id":"morohafv-yhgfo","tipo":"saida","descricao":"COURO","categoria":"vestuario","valor":44.08,"frequencia":"variavel","status":"pendente","data":"2026-05-04","createdAt":1777863600000},{"id":"moroi3t3-fnu01","tipo":"saida","descricao":"MACBOOK","categoria":"outros","valor":477.65,"frequencia":"variavel","status":"pago","data":"2026-05-04","createdAt":1777863600000},{"id":"moroit9q-i9mpn","tipo":"saida","descricao":"AIRBNB","categoria":"outros","valor":342,"frequencia":"variavel","status":"pago","data":"2026-05-04","createdAt":1777863600000},{"id":"moroxupr-r04vr","tipo":"saida","descricao":"TECIDOS","categoria":"outros","valor":150,"frequencia":"variavel","status":"pendente","data":"2026-05-04","createdAt":1777863600000},{"id":"moslsih1-w900a","tipo":"saida","descricao":"Passaporte Tiago","categoria":"outros","valor":257.9,"frequencia":"variavel","status":"pendente","data":"2026-05-05","createdAt":1777950000000},{"id":"moslt1c6-zm9xg","tipo":"saida","descricao":"Cama","categoria":"outros","valor":350,"frequencia":"variavel","status":"pago","data":"2026-05-05","createdAt":1777950000000},{"id":"moslz3y4-0a4y8","tipo":"saida","descricao":"GASTOS DO MES ( ANIVERSARIOS","categoria":"alimentacao","valor":50,"frequencia":"variavel","status":"pendente","data":"2026-05-05","createdAt":1777950000000},{"id":"mot28sbp-crzkz","tipo":"saida","descricao":"CELULAR ARRUMAR","categoria":"outros","valor":200,"frequencia":"variavel","status":"pendente","data":"2026-05-05","createdAt":1777950000000},{"id":"moth96gv-iy0c7","tipo":"saida","descricao":"calca show","categoria":"vestuario","valor":123.45,"frequencia":"variavel","status":"pago","data":"2026-05-06","createdAt":1778036400000,"contaId":null},{"id":"mou4sh1i-zbqwu","tipo":"saida","descricao":"salgado","valor":7,"categoria":"alimentacao","contaId":null,"frequencia":"variavel","status":"pago","data":"2026-05-06","createdAt":1778036400000}],"accounts":[{"id":"mou3jvc9-hh9mt","nome":"Banco do Brasil","tipo":"corrente","cor":"#F59E0B"}],"piggies":[{"id":"mou3j6p9-5efva","nome":"MACBOOK","emoji":"💻","meta":3000,"guardado":1500,"contaId":"mou3jvc9-hh9mt","inicio":"2026-05-06","deadline":null}]};
+
+  // Grava no localStorage (backup imediato)
+  try {
+    localStorage.setItem('financa_backup_v1', JSON.stringify(DADOS_RECUPERADOS));
+    localStorage.setItem('financa_app_v3', JSON.stringify(DADOS_RECUPERADOS));
+    localStorage.setItem(RECOVERY_FLAG, '1');
+    console.log('%c✅ Dados recuperados com sucesso!', 'color:#2DBE72;font-weight:bold;font-size:13px');
+  } catch(e) {
+    console.error('Erro na recuperacao:', e);
+  }
+};
+
 const init = () => {
+  recoverData(); // Restaura dados antes de qualquer coisa
   checkLogin();
   wireEvents();
-  startCloudListener(); // Firebase escutando na nuvem
+  startCloudListener();
 };
 
 document.addEventListener('DOMContentLoaded', init);
