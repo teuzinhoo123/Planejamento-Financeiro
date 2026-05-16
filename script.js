@@ -65,20 +65,34 @@ const txOfMonthYM = (y, m) => state.transactions.filter(tx => {
 });
 
 const getSaldoInicial = (y, m) => {
+  // Caso 1: valor manual definido para este mes
   const key = monthKey(y, m);
   if (state.saldoBase[key] !== undefined) return state.saldoBase[key];
-  for (let i = 1; i <= 36; i++) {
-    let py = y, pm = m - i;
-    while (pm < 0) { pm += 12; py--; }
-    const pKey = monthKey(py, pm);
-    if (state.saldoBase[pKey] !== undefined) {
-      let saldo = state.saldoBase[pKey];
-      for (let j = i - 1; j >= 0; j--) {
-        let cy = y, cm = m - j;
-        while (cm < 0) { cm += 12; cy--; }
+
+  // Caso 2: procura o mes base mais proximo no passado (ate 60 meses)
+  // e propaga as sobras mes a mes ate o mes pedido (exclusive)
+  for (let i = 1; i <= 60; i++) {
+    let baseY = y, baseM = m - i;
+    while (baseM < 0) { baseM += 12; baseY--; }
+
+    const baseKey = monthKey(baseY, baseM);
+    if (state.saldoBase[baseKey] !== undefined) {
+      let saldo = state.saldoBase[baseKey];
+
+      // Processa: base, base+1, ..., alvo-1  (i passos)
+      for (let step = 0; step < i; step++) {
+        let cy = baseY, cm = baseM + step;
+        while (cm > 11) { cm -= 12; cy++; }
+
         const txs = txOfMonthYM(cy, cm);
-        const entradasPagas = txs.filter(t => t.tipo === 'entrada' && t.status === 'pago').reduce((a,t) => a + t.valor, 0);
-        const saidasPagas   = txs.filter(t => t.tipo === 'saida'   && t.status === 'pago').reduce((a,t) => a + t.valor, 0);
+        const entradasPagas = txs
+          .filter(t => t.tipo === 'entrada' && t.status === 'pago')
+          .reduce((a, t) => a + t.valor, 0);
+        const saidasPagas = txs
+          .filter(t => t.tipo === 'saida' && t.status === 'pago')
+          .reduce((a, t) => a + t.valor, 0);
+
+        // Sobra do mes step vira saldo inicial do proximo
         saldo = saldo + entradasPagas - saidasPagas;
       }
       return saldo;
@@ -113,21 +127,25 @@ const calcTotals = () => {
    ☁️ PERSISTÊNCIA NA NUVEM (FIREBASE REAL-TIME)
    ============================================================ */
 const startCloudListener = () => {
-  // .onSnapshot é o ouvinte mágico: se mudar no celular, a tela do PC recarrega na hora
-  cloudDataRef.onSnapshot((doc) => {
+  // Usa .get() (leitura unica) em vez de .onSnapshot() para evitar
+  // o erro de WebChannel no GitHub Pages / ambientes sem WebSocket estavel.
+  cloudDataRef.get().then((doc) => {
     if (doc.exists) {
       const data = doc.data();
-      state.saldoBase = data.saldoBase || {};
+      state.saldoBase    = data.saldoBase    || {};
       state.transactions = data.transactions || [];
-      state.accounts = data.accounts || [];
-      state.piggies = data.piggies || [];
-      render(); 
+      state.accounts     = data.accounts     || [];
+      state.piggies      = data.piggies      || [];
     } else {
-      saveState(); // Se não tem dados lá, cria o primeiro banco vazio
+      // Primeira vez: cria o documento vazio no Firestore
+      saveState();
     }
-  }, (error) => {
+    render();
+  }).catch((error) => {
     console.error("Erro ao ler da nuvem:", error);
-    showToast('⚠️ Erro de conexão com o banco.');
+    showToast("Erro de conexao. Tentando reconectar...");
+    // Tenta de novo em 5 segundos
+    setTimeout(startCloudListener, 5000);
   });
 };
 
