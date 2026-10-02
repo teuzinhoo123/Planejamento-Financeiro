@@ -510,13 +510,20 @@ const render = () => { ensureRecurring(state.currentYear, state.currentMonth); r
 /* ============================================================
    LÓGICA DE FORMULÁRIOS
    ============================================================ */
+const syncParcelas = () => {
+  const usaCartao = getToggle(el.tipoToggle) === 'saida' && !state.editingTxId && !!$('cartaoInput').value;
+  $('parcelasGroup').style.display = usaCartao ? '' : 'none';
+  if (!usaCartao) $('parcelasInput').value = 1;
+  const n = clamp(parseInt($('parcelasInput').value) || 1, 1, 60), v = parseFloat(el.valorInput.value);
+  $('parcelasTotal').textContent = (n > 1 && v > 0) ? `${n}x de ${toBRL(v)} = total de ${toBRL(parseFloat((n * v).toFixed(2)))}` : 'O valor acima é o de cada parcela.';
+};
 const syncCategorias = keep => {
   const tipo = getToggle(el.tipoToggle), lista = tipo === 'entrada' ? CAT_ENTRADA : CAT_SAIDA;
   el.categoriaInput.innerHTML = lista.map(c => `<option value="${c}">${catIcon(c)} ${CATEGORY_LABELS[c]}</option>`).join('');
   if (keep && lista.includes(keep)) el.categoriaInput.value = keep;
-  $('parcelasGroup').style.display = (tipo === 'saida' && !state.editingTxId) ? '' : 'none';
   $('cartaoInput').innerHTML = '<option value="">Conta (débito, Pix ou dinheiro)</option>' + state.cards.map(c => `<option value="${c.id}">💳 ${esc(c.nome)}</option>`).join('');
   $('cartaoGroup').style.display = (tipo === 'saida' && !state.editingTxId && state.cards.length) ? '' : 'none';
+  syncParcelas();
 };
 const resetForm = () => {
   state.editingTxId = null; el.formModalTitle.textContent = 'Novo Lançamento';
@@ -543,7 +550,7 @@ const saveTx = () => {
     showToast('✏️ Lançamento atualizado!');
   } else {
     const [y,m,d] = (data.data || todayLocal()).split('-').map(Number);
-    const n = tipo === 'saida' ? clamp(parseInt($('parcelasInput').value) || 1, 1, 60) : 1;
+    const n = (tipo === 'saida' && $('cartaoInput').value) ? clamp(parseInt($('parcelasInput').value) || 1, 1, 60) : 1;
     const card = tipo === 'saida' ? state.cards.find(c => c.id === $('cartaoInput').value) : null;
     const compra = data.data || todayLocal(), base = card ? faturaVenc(card, compra) : null;
     for (let i = 0; i < n; i++) {
@@ -551,7 +558,7 @@ const saveTx = () => {
       const dt = base ? addMonthsClamp(by, bm-1, bd, i) : addMonthsClamp(y, m-1, d, i);
       state.transactions.push({ id: uid(), ...data, descricao: n > 1 ? `${descricao} (${i+1}/${n})` : descricao, status: (card || i > 0) ? 'pendente' : data.status, frequencia: n > 1 ? 'variavel' : data.frequencia, data: dt.iso, createdAt: dt.ts, ...(card ? { cartaoId: card.id, dataCompra: compra } : {}) });
     }
-    showToast(n > 1 ? `✅ ${n} parcelas lançadas!` : '✅ Lançamento adicionado!');
+    showToast(n > 1 ? `✅ ${n}x de ${toBRL(data.valor)} lançadas (total ${toBRL(parseFloat((n * data.valor).toFixed(2)))})` : '✅ Lançamento adicionado!');
   }
   saveState(); closeModal(el.formModal);
 };
@@ -726,6 +733,8 @@ const wireEvents = () => {
       saveState(); showToast('✅ Fatura marcada como paga.');
     }
   });
+  ['cartaoInput', 'parcelasInput'].forEach(id => $(id).addEventListener('input', syncParcelas));
+  el.valorInput.addEventListener('input', syncParcelas);
   $('fabBtn').addEventListener('click', () => el.openFormBtn.click());
   document.addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('.modal-overlay.open').forEach(o => closeModal(o)); });
   el.openFormBtn.addEventListener('click', () => { resetForm(); populateAccountSelects(); openModal(el.formModal); });
