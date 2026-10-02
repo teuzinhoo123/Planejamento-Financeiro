@@ -2,7 +2,12 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#4F8EF7" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <title>Finança — Controle Financeiro</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -12,6 +17,7 @@
   <!-- 🔥 Firebase SDKs -->
   <script src="https://www.gstatic.com/firebasejs/10.11.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.11.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.11.0/firebase-auth-compat.js"></script>
   
   <!-- JS carregado de forma otimizada -->
   <script src="script.js" defer></script>
@@ -23,10 +29,12 @@
     <div class="login-card">
       <div style="font-size: 40px; margin-bottom: 10px;">◈</div>
       <h2>Acesso Seguro</h2>
-      <p>Digite a senha para acessar suas finanças</p>
-      <input type="password" id="loginPassword" placeholder="****" class="input-field" inputmode="numeric" />
+      <p>Entre com seu e-mail e senha</p>
+      <input type="email" id="loginEmail" placeholder="E-mail" class="input-field" autocomplete="username" />
+      <input type="password" id="loginPassword" placeholder="Senha" class="input-field" autocomplete="current-password" style="margin-top:var(--sp-3)" />
       <button id="loginBtn" class="btn-primary" style="width:100%">Entrar</button>
-      <p id="loginError" style="color: var(--clr-red-text); display: none; margin-top: var(--sp-3); font-weight: 600;">Senha incorreta</p>
+      <button id="signupBtn" class="btn-secondary" style="width:100%;margin-top:var(--sp-2)">Criar conta</button>
+      <p id="loginError" style="color: var(--clr-red-text); display: none; margin-top: var(--sp-3); font-weight: 600;"></p>
     </div>
   </div>
 
@@ -74,7 +82,7 @@
             <svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
           </button>
         </div>
-        <p class="balance-sub">Calculado: Sobras anteriores + Entradas - Saídas Pagas</p>
+        <p class="balance-sub" id="balanceSub">Sobra do mês anterior + entradas pagas - saídas pagas - cofrinhos</p>
       </div>
 
       <section class="summary-grid">
@@ -101,12 +109,29 @@
         <button class="btn-text" id="openAccountFormBtn">+ Nova Conta</button>
       </div>
       <div class="accounts-list" id="accountsList"></div>
+      <button class="btn-secondary" id="transferBtn" style="width:100%;margin-bottom:var(--sp-4)">Transferir entre contas</button>
+
+      <div class="section-header"><h2 class="section-title">Cartões de crédito</h2></div>
+      <div class="accounts-list" id="cardsList"></div>
+      <button class="btn-secondary" id="addCardBtn" style="width:100%;margin-bottom:var(--sp-4)">Novo cartão</button>
 
       <div class="section-header">
         <h2 class="section-title">Gastos por Categoria</h2>
         <span class="section-hint" id="categoryMonthHint"></span>
       </div>
       <div class="category-breakdown" id="categoryBreakdown"></div>
+
+      <div class="section-header"><h2 class="section-title">Últimos 6 meses</h2></div>
+      <div class="chart-box" id="monthChart"></div>
+      <span class="input-hint">Verde: entradas. Vermelho: saídas.</span>
+
+      <div class="section-header"><h2 class="section-title">Backup</h2></div>
+      <div class="backup-row">
+        <button class="btn-secondary" id="exportBtn">Exportar dados</button>
+        <button class="btn-secondary" id="importBtn">Importar dados</button>
+        <button class="btn-secondary" id="logoutBtn">Sair</button>
+        <input type="file" id="importFile" accept="application/json" hidden />
+      </div>
     </section>
 
     <!-- TAB: LANÇAMENTOS -->
@@ -170,6 +195,9 @@
               <button class="chip" data-value="salario">💼 Salário</button>
               <button class="chip" data-value="freelance">💻 Freelance</button>
               <button class="chip" data-value="investimento">📈 Investimento</button>
+              <button class="chip" data-value="presente">🎁 Presente</button>
+              <button class="chip" data-value="reembolso">↩️ Reembolso</button>
+              <button class="chip" data-value="outros-entrada">✨ Outros (entrada)</button>
               <button class="chip" data-value="outros">📦 Outros</button>
             </div>
           </div>
@@ -234,10 +262,10 @@
   <div class="modal-overlay" id="balanceModal" role="dialog" aria-modal="true">
     <div class="modal-card">
       <h2 class="modal-title">Saldo Inicial do Mês</h2>
-      <p class="modal-sub" id="balanceModalSub">Defina um saldo base diferente caso a sobra do mês passado não esteja correta.</p>
+      <p class="modal-sub" id="balanceModalSub">Por padrão vale a sobra do mês anterior. Informe um valor para substituir, ou deixe em branco para voltar ao automático.</p>
       <div class="input-group">
         <label class="input-label" for="balanceInput">Valor (R$)</label>
-        <input type="number" id="balanceInput" class="input-field" placeholder="0,00" min="0" step="0.01" inputmode="decimal" />
+        <input type="text" id="balanceInput" class="input-field" placeholder="0,00" inputmode="decimal" />
       </div>
       <div class="modal-actions">
         <button class="btn-secondary" id="cancelBalanceBtn">Cancelar</button>
@@ -343,6 +371,16 @@
           </select>
         </div>
       </div>
+      <div class="input-group" id="cartaoGroup">
+        <label class="input-label" for="cartaoInput">Pagar com</label>
+        <select id="cartaoInput" class="input-field"></select>
+        <span class="input-hint">Compras no cartão entram no mês da fatura e ficam pendentes até você pagar a fatura.</span>
+      </div>
+      <div class="input-group" id="parcelasGroup">
+        <label class="input-label" for="parcelasInput">Parcelas</label>
+        <input type="number" id="parcelasInput" class="input-field" value="1" min="1" max="60" step="1" inputmode="numeric" />
+        <span class="input-hint">O valor acima é o de cada parcela. Frequência fixa repete o lançamento todo mês.</span>
+      </div>
       <div class="input-row">
         <div class="input-group">
           <label class="input-label">Status</label>
@@ -393,7 +431,7 @@
           <input type="number" id="piggyGoalInput" class="input-field" placeholder="0,00" min="0.01" step="0.01" inputmode="decimal" />
         </div>
         <div class="input-group">
-          <label class="input-label" for="piggySavedInput">Já guardado (R$)</label>
+          <label class="input-label" for="piggySavedInput">Guardado (sai do saldo)</label>
           <input type="number" id="piggySavedInput" class="input-field" placeholder="0,00" min="0" step="0.01" inputmode="decimal" />
         </div>
       </div>
@@ -422,7 +460,7 @@
 
   <div class="modal-overlay" id="piggyDepositModal" role="dialog" aria-modal="true">
     <div class="modal-card">
-      <h2 class="modal-title">Guardar no Cofrinho</h2>
+      <h2 class="modal-title" id="piggyDepositTitle">Guardar no Cofrinho</h2>
       <p class="modal-sub" id="piggyDepositSub">Informe o valor a guardar.</p>
       <div class="input-group">
         <label class="input-label" for="depositAmountInput">Valor (R$)</label>
@@ -447,6 +485,16 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="transferModal"><div class="modal-card">
+    <h2 class="modal-title">Transferir entre contas</h2>
+    <div class="input-group"><label class="input-label" for="transferFrom">De</label><select id="transferFrom" class="input-field"></select></div>
+    <div class="input-group"><label class="input-label" for="transferTo">Para</label><select id="transferTo" class="input-field"></select></div>
+    <div class="input-group"><label class="input-label" for="transferValue">Valor (R$)</label><input type="number" id="transferValue" class="input-field" step="0.01" min="0" inputmode="decimal" /></div>
+    <button class="btn-primary" id="saveTransferBtn" style="width:100%">Transferir</button>
+    <button class="btn-secondary" id="cancelTransferBtn" style="width:100%;margin-top:var(--sp-2)">Cancelar</button>
+  </div></div>
+  <script>if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));</script>
+  <button class="fab" id="fabBtn" aria-label="Novo lançamento">+</button>
   <div class="toast" id="toast" role="alert" aria-live="polite"></div>
 </body>
 </html>

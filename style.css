@@ -593,3 +593,52 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
   .tab-bar { max-width: 720px; margin: 0 auto; }
   .app-main { padding-bottom: var(--sp-12); }
 }
+
+
+/* ============================================================
+   v5 · Foco em celular
+   ============================================================ */
+:root { --bar-h: 62px; }
+.app-header { padding-top: env(safe-area-inset-top); }
+.tab-bar { position: fixed; top: auto; left: 0; right: 0; bottom: 0; z-index: 60; display: grid; grid-template-columns: repeat(3, 1fr); width: auto; max-width: none; margin: 0; padding: 0 0 env(safe-area-inset-bottom); overflow: visible; background: var(--clr-surface); border-top: 1px solid var(--clr-border); border-bottom: 0; }
+.tab-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-height: var(--bar-h); font-size: 11px; border-bottom: 0; border-top: 3px solid transparent; }
+.tab-btn.active { border-bottom: 0; border-top-color: var(--clr-blue-mid); }
+.app-main { padding-bottom: calc(var(--bar-h) + 104px + env(safe-area-inset-bottom)); }
+.fab { position: fixed; z-index: 55; right: 16px; bottom: calc(var(--bar-h) + 16px + env(safe-area-inset-bottom)); width: 56px; height: 56px; border-radius: 50%; border: 0; background: var(--clr-blue-mid); color: #fff; font-size: 30px; line-height: 1; box-shadow: 0 8px 20px rgba(79,142,247,.45); }
+.fab:active { transform: scale(.95); }
+body[style*="overflow: hidden"] .fab { display: none; }
+.toast { bottom: calc(var(--bar-h) + 84px + env(safe-area-inset-bottom)); }
+.toast.show { pointer-events: auto; }
+.toast-action { margin-left: 14px; padding: 4px 2px; font-weight: 700; color: #9CC2FF; text-decoration: underline; background: none; border: 0; font: inherit; }
+.input-field { font-size: 16px; }
+.input-hint { display: block; margin-top: 4px; font-size: 12px; color: var(--text-muted); }
+.modal-card { max-height: 92dvh; overflow-y: auto; overscroll-behavior: contain; }
+.tx-action-btn, .account-action-btn, .piggy-action-btn { min-width: 40px; min-height: 40px; }
+.tx-check { min-width: 36px; min-height: 36px; }
+@media (hover: none) { .tx-actions { opacity: 1; visibility: visible; } }
+.cat-row[data-cat] { cursor: pointer; }
+.cat-row-fill.warn { background: #F5893A; }
+.cat-row-fill.over { background: #E25353; }
+.piggy-btns { display: flex; gap: 8px; }
+.piggy-btns .btn-deposit { flex: 1; }
+.btn-withdraw { background: transparent; border: 1px solid var(--clr-border); color: var(--text-secondary); }
+.piggy-forecast { font-size: 12px; color: var(--text-muted); }
+.backup-row { display: flex; gap: 8px; padding-bottom: var(--sp-5); }
+.backup-row .btn-secondary { flex: 1; min-height: 44px; }
+:focus-visible { outline: 2px solid var(--clr-blue-mid); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+
+/* v5.1 · Tema escuro (segue o sistema), gráfico e saldo por conta */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --clr-bg: #0F1420; --clr-surface: #181F2E; --clr-surface-2: #1F2738; --clr-border: #2B3448;
+    --clr-green-bg: #12301F; --clr-blue-bg: #14233F; --clr-red-bg: #3A1A1F;
+    --clr-red-text: #FF8A8A; --clr-green-text: #5BD39A;
+    --text-primary: #E8ECF4; --text-secondary: #A8B1C4; --text-muted: #7C879B;
+    color-scheme: dark;
+  }
+}
+.chart-box svg { width: 100%; height: auto; display: block; }
+.chart-box text { font-size: 10px; fill: var(--text-muted); }
+.bar-in { fill: #2FB67C; } .bar-out { fill: #E25353; }
+.account-balance { margin-top: 2px; font-weight: 700; font-size: var(--fs-sm); cursor: pointer; }
